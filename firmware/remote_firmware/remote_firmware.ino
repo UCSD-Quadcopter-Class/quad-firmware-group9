@@ -174,12 +174,13 @@ void loop() {
   update_display();
   
 
-//  for(char i= 0; i < 8;i++) {
+  for (char i=0; i < 8; i++) {
+    rfWrite(highByte(numbers[i]));
+    rfWrite(lowByte(numbers[i]));
+    rfWrite(' ');
 //    Serial.print(numbers[i]);
-//    Serial.print(" ");      
-//  }
-  rfWrite(highByte(numbers[0]));
-  rfWrite(lowByte(numbers[0]));
+//    Serial.print(" ");
+  }
 
   /* RADIO TEST: Test sending/receiving of serial data over radio */
 
@@ -193,7 +194,7 @@ void loop() {
 //    Serial.print(rfRead());  // ... send it out serial.
 //  }
 
-  //Serial.println("\n");
+//  Serial.println("\n");
  
   delay(200);
 
