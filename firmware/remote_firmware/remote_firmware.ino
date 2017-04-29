@@ -123,6 +123,7 @@ void setup() {
 }
 
 int last = 0;
+char magic[8] = {'A','B','C','D','E','F','G','H'};
 
 void loop() {
 
@@ -170,32 +171,15 @@ void loop() {
       max_val[i] = numbers[i];
     }
   }
-
+  
   update_display();
   
-
   for (char i=0; i < 8; i++) {
+    rfWrite(magic[i]);
     rfWrite(highByte(numbers[i]));
     rfWrite(lowByte(numbers[i]));
-    rfWrite(' ');
-//    Serial.print(numbers[i]);
-//    Serial.print(" ");
   }
-
-  /* RADIO TEST: Test sending/receiving of serial data over radio */
-
-  /* If serial comes in... */
-//  if (Serial.available())  
-//  {
-//    rfWrite(Serial.read()); // ...send it out the radio.
-//  }
-//  if (rfAvailable())  // If data received on radio...
-//  {
-//    Serial.print(rfRead());  // ... send it out serial.
-//  }
-
-//  Serial.println("\n");
- 
-  delay(200);
+   
+  delay(120);
 
 }

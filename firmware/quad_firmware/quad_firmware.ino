@@ -1,12 +1,14 @@
 #include <radio.h>
 
-#define MOTOR_PIN 3
+#define MOTOR1_PIN 4
+#define MOTOR2_PIN 5
+#define MOTOR3_PIN 8
+#define MOTOR4_PIN 9
 
 char buff[5];
-int index = 0;
+char index = 0;
 int number = 0;
-int count = 0;
-int y=0;
+char count = 0;
 unsigned long t;
 int numbers[8] = {0,0,0,0,0,0,0,0};
 void setup() {
@@ -20,7 +22,10 @@ void setup() {
 
   rfBegin(RADIO_CHANNEL);
   
-  pinMode(MOTOR_PIN, OUTPUT);
+  pinMode(MOTOR1_PIN, OUTPUT);
+  pinMode(MOTOR2_PIN, OUTPUT);
+  pinMode(MOTOR3_PIN, OUTPUT);
+  pinMode(MOTOR4_PIN, OUTPUT);
   t = millis();
 }
 
@@ -28,15 +33,7 @@ void loop() {
   // put your main code here, to run repeatedly:
   if (rfAvailable()){
     uint8_t c = rfRead();
-    if (index > 7){
-      index = 0;
-    }
-//    Serial.println(c);
-    if (c == ' '){
-      numbers[index] = number;
-      index++ ;
-    }
-    else{
+    if (!isin(c)) {
       if(count == 0){
         number = c;
         number = number<<8;
@@ -45,28 +42,50 @@ void loop() {
       else {
         count = 0;
         number |= c;
+        if (index < 8){
+          numbers[index] = number;
+        }
       }
     }
+    else {
+      index = indexof(c);
+      count = 0;
+    }
+//    if(index ==0){
+//      for (char i=0; i < 8; i++) {
+//        Serial.print(numbers[i]);
+//        Serial.print(" ");
+//      }
+//      Serial.println("");
+//    }
     t = millis(); 
-  }
-  if (index > 7 && count == 0){
-    for (char i=0;i<8;i++){
-      Serial.print(numbers[i]);
-      Serial.print(" ");
-    }
-    Serial.println("");
-    motor(numbers[0],MOTOR_PIN);
-    index = 0;
-    t = millis();
-  }
 
-  if ((millis()-t) > 1000){
-    for (char i = 0; i < 8; i++){
-      numbers[i] = 0;
+  }
+  else{
+    if ((millis()-t) > 1000){
+      for (char i = 0; i < 8; i++){
+        numbers[i] = 0;
+      }
     }
   }
-  
-//  delay(20);
+}
+
+bool isin(uint8_t c){
+  if (c=='A'||c=='B'||c=='C'||c=='D'||c=='E'||c=='F'||c=='G'||c=='H'){
+    return true;
+  }
+  return false;
+}
+char indexof(uint8_t c){
+  if(c=='A'){return 0;}
+  else if(c=='B'){return 1;}
+  else if(c=='C'){return 2;}
+  else if(c=='D'){return 3;}
+  else if(c=='E'){return 4;}
+  else if(c=='F'){return 5;}
+  else if(c=='G'){return 6;}
+  else if(c=='H'){return 7;}
+  else {return 8;}
 }
 
 void motor(int speed, int channel){
@@ -75,7 +94,7 @@ void motor(int speed, int channel){
 //    Serial.println("0");
   }
   else {
-    y = map(speed,150,825,0,200);
+    int y = map(speed,150,825,0,200);
     analogWrite(channel, y);
 //    Serial.println(y);
   }
