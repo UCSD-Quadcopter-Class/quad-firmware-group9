@@ -86,7 +86,7 @@ void setup() {
 
   //lcd.print("Hello, World!");
  
-  const int RADIO_CHANNEL = 11;        // Channel for radio communications (can be 11-26)
+  const int RADIO_CHANNEL = 26;        // Channel for radio communications (can be 11-26)
   const int SERIAL_BAUD = 9600;        // Baud rate for serial port 
   const int SERIAL1_BAUD = 9600;     // Baud rate for serial1 port
 

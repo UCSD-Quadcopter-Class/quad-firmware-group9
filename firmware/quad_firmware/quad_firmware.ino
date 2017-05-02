@@ -13,7 +13,7 @@ unsigned long t;
 int numbers[8] = {0,0,0,0,0,0,0,0};
 void setup() {
   // put your setup code here, to run once:  
-  const int RADIO_CHANNEL = 11;        // Channel for radio communications (can be 11-26)
+  const int RADIO_CHANNEL = 26;        // Channel for radio communications (can be 11-26)
   const int SERIAL_BAUD = 9600;        // Baud rate for serial port 
   const int SERIAL1_BAUD = 9600;     // Baud rate for serial1 port
 
@@ -61,13 +61,15 @@ void loop() {
     t = millis(); 
 
   }
-  else{
-    if ((millis()-t) > 1000){
-      for (char i = 0; i < 8; i++){
-        numbers[i] = 0;
-      }
+  throttle();
+  if ((millis()-t) > 1000){
+    for (char i = 0; i < 8; i++){
+      numbers[i] = 0;
     }
   }
+
+  
+
 }
 
 bool isin(uint8_t c){
@@ -89,14 +91,38 @@ char indexof(uint8_t c){
 }
 
 void motor(int speed, int channel){
-  if (speed < 160 || speed > 820){
+  if (speed < 140 || speed > 820){
     analogWrite(channel, 0);
-//    Serial.println("0");
+    if(channel == 4){
+      Serial.println("0");
+    }
   }
   else {
-    int y = map(speed,150,825,0,200);
+    int y = map(speed,140,825,40,255);
     analogWrite(channel, y);
-//    Serial.println(y);
+    if (channel==4){
+      Serial.println(y);
+    }
   }
 }
+void throttle(){
+  motor(numbers[0],MOTOR1_PIN);
+  motor(numbers[0],MOTOR2_PIN);
+  motor(numbers[0],MOTOR3_PIN);
+  motor(numbers[0],MOTOR4_PIN);
+}
+
+//void pid(){
+//  perror = ptarget - psensor;
+//  pintegral = (pintegral/2) + perror;
+//  if(perror == 0){
+//    pintegral = 0; 
+//  }
+//  if(abs(perror) > 40){
+//    pintegral = 0;
+//  }
+//  pderivative = perror - pprev_error;
+//  pprev_error = perror;
+//  pspeed = (kp*perror) + (ki*pintegral) + (kd+pderivative);
+//}
 
