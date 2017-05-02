@@ -1,16 +1,44 @@
 #include <radio.h>
+#include <Wire.h>
+#include <SPI.h>
+#include <Adafruit_LSM9DS1.h>
+#include <Adafruit_Sensor.h>  // not used in this demo but required!
+#include <Adafruit_Simple_AHRS.h>
 
 #define MOTOR1_PIN 4
 #define MOTOR2_PIN 5
 #define MOTOR3_PIN 8
 #define MOTOR4_PIN 9
 
+Adafruit_LSM9DS1 lsm = Adafruit_LSM9DS1();
+Adafruit_Simple_AHRS ahrs(&lsm.getAccel(), &lsm.getMag());
 char buff[5];
 char index = 0;
 int number = 0;
 char count = 0;
 unsigned long t;
 int numbers[8] = {0,0,0,0,0,0,0,0};
+
+void setupSensor()
+{
+  // 1.) Set the accelerometer range
+  lsm.setupAccel(lsm.LSM9DS1_ACCELRANGE_2G);
+  //lsm.setupAccel(lsm.LSM9DS1_ACCELRANGE_4G);
+  //lsm.setupAccel(lsm.LSM9DS1_ACCELRANGE_8G);
+  //lsm.setupAccel(lsm.LSM9DS1_ACCELRANGE_16G);
+  
+  // 2.) Set the magnetometer sensitivity
+  lsm.setupMag(lsm.LSM9DS1_MAGGAIN_4GAUSS);
+  //lsm.setupMag(lsm.LSM9DS1_MAGGAIN_8GAUSS);
+  //lsm.setupMag(lsm.LSM9DS1_MAGGAIN_12GAUSS);
+  //lsm.setupMag(lsm.LSM9DS1_MAGGAIN_16GAUSS);
+
+  // 3.) Setup the gyroscope
+  lsm.setupGyro(lsm.LSM9DS1_GYROSCALE_245DPS);
+  //lsm.setupGyro(lsm.LSM9DS1_GYROSCALE_500DPS);
+  //lsm.setupGyro(lsm.LSM9DS1_GYROSCALE_2000DPS);
+}
+
 void setup() {
   // put your setup code here, to run once:  
   const int RADIO_CHANNEL = 26;        // Channel for radio communications (can be 11-26)
@@ -26,11 +54,27 @@ void setup() {
   pinMode(MOTOR2_PIN, OUTPUT);
   pinMode(MOTOR3_PIN, OUTPUT);
   pinMode(MOTOR4_PIN, OUTPUT);
+
+  setupSensor();
   t = millis();
 }
 
 void loop() {
   // put your main code here, to run repeatedly:
+  sensors_vec_t orientation;
+  if (ahrs.getOrientation(&orientation)){
+    
+  }
+  control();
+
+  motor_speed();
+  if ((millis()-t) > 1000){
+    for (char i = 0; i < 8; i++){
+      numbers[i] = 0;
+    }
+  }
+}
+void control(){
   if (rfAvailable()){
     uint8_t c = rfRead();
     if (!isin(c)) {
@@ -58,20 +102,9 @@ void loop() {
 //      }
 //      Serial.println("");
 //    }
-    t = millis(); 
-
-  }
-  throttle();
-  if ((millis()-t) > 1000){
-    for (char i = 0; i < 8; i++){
-      numbers[i] = 0;
-    }
-  }
-
-  
-
+    t = millis();
+  } 
 }
-
 bool isin(uint8_t c){
   if (c=='A'||c=='B'||c=='C'||c=='D'||c=='E'||c=='F'||c=='G'||c=='H'){
     return true;
@@ -105,11 +138,21 @@ void motor(int speed, int channel){
     }
   }
 }
-void throttle(){
+void motor_speed(){
+  //change speed of all 4 motors
   motor(numbers[0],MOTOR1_PIN);
   motor(numbers[0],MOTOR2_PIN);
   motor(numbers[0],MOTOR3_PIN);
   motor(numbers[0],MOTOR4_PIN);
+}
+void pitch(){
+  //raise or lower 2 motors
+}
+void roll(){
+  //same as pitch
+}
+void yaw() {
+  //raise speed of 2 diagonal motors
 }
 
 //void pid(){
@@ -124,5 +167,29 @@ void throttle(){
 //  pderivative = perror - pprev_error;
 //  pprev_error = perror;
 //  pspeed = (kp*perror) + (ki*pintegral) + (kd+pderivative);
+
+//  rerror = rtarget - rsensor;
+//  rintegral = (integral/2) + rerror;
+//  if(rerror == 0){
+//    rintegral = 0; 
+//  }
+//  if(abs(rerror) > 40){
+//    rintegral = 0;
+//  }
+//  rderivative = rerror - rprev_error;
+//  rprev_error = rerror;
+//  rspeed = (kp*rerror) + (ki*rintegral) + (kd+rderivative);
+
+//  yerror = ytarget - ysensor;
+//  yintegral = (yintegral/2) + yerror;
+//  if(yerror == 0){
+//    yintegral = 0; 
+//  }
+//  if(abs(yerror) > 40){
+//    yintegral = 0;
+//  }
+//  yderivative = yerror - yprev_error;
+//  yprev_error = yerror;
+//  yspeed = (kp*yerror) + (ki*yintegral) + (kd+yderivative);
 //}
 
