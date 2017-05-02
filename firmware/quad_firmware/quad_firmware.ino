@@ -23,20 +23,12 @@ void setupSensor()
 {
   // 1.) Set the accelerometer range
   lsm.setupAccel(lsm.LSM9DS1_ACCELRANGE_2G);
-  //lsm.setupAccel(lsm.LSM9DS1_ACCELRANGE_4G);
-  //lsm.setupAccel(lsm.LSM9DS1_ACCELRANGE_8G);
-  //lsm.setupAccel(lsm.LSM9DS1_ACCELRANGE_16G);
   
   // 2.) Set the magnetometer sensitivity
   lsm.setupMag(lsm.LSM9DS1_MAGGAIN_4GAUSS);
-  //lsm.setupMag(lsm.LSM9DS1_MAGGAIN_8GAUSS);
-  //lsm.setupMag(lsm.LSM9DS1_MAGGAIN_12GAUSS);
-  //lsm.setupMag(lsm.LSM9DS1_MAGGAIN_16GAUSS);
 
   // 3.) Setup the gyroscope
   lsm.setupGyro(lsm.LSM9DS1_GYROSCALE_245DPS);
-  //lsm.setupGyro(lsm.LSM9DS1_GYROSCALE_500DPS);
-  //lsm.setupGyro(lsm.LSM9DS1_GYROSCALE_2000DPS);
 }
 
 void setup() {
@@ -62,18 +54,20 @@ void setup() {
 void loop() {
   // put your main code here, to run repeatedly:
   sensors_vec_t orientation;
-  if (ahrs.getOrientation(&orientation)){
-    
+  if(ahrs.getOrientation(&orientation)){
+    pid();
   }
   control();
-
   motor_speed();
+  
   if ((millis()-t) > 1000){
     for (char i = 0; i < 8; i++){
       numbers[i] = 0;
     }
   }
 }
+
+//extra methods
 void control(){
   if (rfAvailable()){
     uint8_t c = rfRead();
