@@ -119,9 +119,14 @@ bool Adafruit_Simple_AHRS::getRollPitchYaw(sensors_vec_t* orientation) {
                                                                      accel_event.acceleration.z * cos(orientation->roll)));
 
   //Report raw data from the gyro and save to vector
-  orientation->gyro.z = gyro_event.gyro.z;
+  orientation->gyro.x = gyro_event.gyro.x;
   orientation->gyro.y = gyro_event.gyro.y;
   orientation->gyro.z = gyro_event.gyro.z;
+
+  // Report raw accelerometer data
+  orientation->acc.x = accel_event.acceleration.x;
+  orientation->acc.y = accel_event.acceleration.y;
+  orientation->acc.z = accel_event.acceleration.z;
 
   // Convert angular data to degree 
   orientation->roll = orientation->roll * 180 / PI_F;

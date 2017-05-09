@@ -27,10 +27,11 @@ bool btn2Hi = 0;
 uint8_t PIDflag;
 uint8_t PIDopt;
 bool LEDVal = 0;
+bool latch = false;
 
 // time variables
-unsigned int last = 0;
-unsigned int screen_last = 0;
+unsigned long last = 0;
+unsigned long screen_last = 0;
 
 // misc. variables
 uint8_t scale[8] = 
@@ -66,7 +67,7 @@ void updatePIDVals() {
   if(!locked[PIDopt]) {
     sequenced[tensPowerPot-1] = valsPowerPot;
   } else {
-    int temp = calibrateArr[PIDopt]*10000;
+    unsigned long temp = calibrateArr[PIDopt]*10000;
     for(char i=4; i>=0; i--) {
       sequenced[i] = temp%10;
       temp/=10;
@@ -85,8 +86,8 @@ void updatePIDVals() {
 /**
  * Maps certain values to a particular scheme. In particular, thrust and yaw are passed as their original counterparts, while
  * pitch and roll are passed as the wanted euler angles.
- * INVERTED: YAW
- * NORMAL: THROTTLE, ROLL, PITCH
+ * INVERTED: YAW, PITCH
+ * NORMAL: THROTTLE, ROLL
  */
 void mapping_scheme() {
   // Map throttle
@@ -94,19 +95,19 @@ void mapping_scheme() {
     if(numbers[0] < min_val[0]+DEAD_THRESH)
       thrust = 0;
     else
-      thrust = (int)map(numbers[0], min_val[0]+DEAD_THRESH, max_val[0], 40, 210); // 220 chosen to given space when making changes in yaw/pitch/roll
+      thrust = (int)map(numbers[0], min_val[0]+DEAD_THRESH, max_val[0], 40, 210);
   }
   
-  // Map yaw
+  // Map yaw (yaw is inverted)
   if(numbers[1] > stdy_val[0]-DEAD_THRESH && numbers[1] < stdy_val[0]+DEAD_THRESH)
     YPRVals[0] = 0;
   else if(numbers[1] > stdy_val[0]+DEAD_THRESH) {
     int negMax = 0-maxYawVal;
-    YPRVals[0] = (int)map(numbers[1], stdy_val[0], max_val[1], 0, negMax);
+    YPRVals[0] = -1*(int)map(numbers[1], stdy_val[0], max_val[1], 0, negMax);
   } else
-    YPRVals[0] = (int)map(numbers[1], min_val[1], stdy_val[0], maxYawVal, 0);
+    YPRVals[0] = -1*(int)map(numbers[1], min_val[1], stdy_val[0], maxYawVal, 0);
   
-  // Map pitch
+  // Map pitch (pitch is inverted)
   if(numbers[2] > stdy_val[1]-DEAD_THRESH && numbers[2] < stdy_val[1]+DEAD_THRESH)
     YPRVals[1] = 0;
   else if(numbers[2] > stdy_val[1]+DEAD_THRESH)
@@ -174,61 +175,71 @@ void update_display() {
   } else {
       switch(PIDopt) {
         case 0:
-          lcd.print("Pitch: Kp x.xxxx");
+          lcd.print("Pitch: Kp ");
+          lcd_printplacement(4);
           lcd.print(locked[PIDopt]?"L":" ");
           lcd.print("         ");
           lcdprint_float(calibrateArr[0], 4);
           break;
         case 1:
-          lcd.print("Pitch: Ki x.xxxx");
+          lcd.print("Pitch: Ki ");
+          lcd_printplacement(4);
           lcd.print(locked[PIDopt]?"L":" ");
           lcd.print("         ");
           lcdprint_float(calibrateArr[1], 4);
           break;
         case 2:
-          lcd.print("Pitch: Kd x.xxxx");
+          lcd.print("Pitch: Kd ");
+          lcd_printplacement(4);
           lcd.print(locked[PIDopt]?"L":" ");
           lcd.print("         ");
           lcdprint_float(calibrateArr[2], 4);
           break;
         case 3:
-          lcd.print("Roll:  Kp x.xxxx");
+          lcd.print("Roll:  Kp ");
+          lcd_printplacement(4);
           lcd.print(locked[PIDopt]?"L":" ");
           lcd.print("         ");
           lcdprint_float(calibrateArr[3], 4);
           break;
         case 4:
-          lcd.print("Roll:  Ki x.xxxx");
+          lcd.print("Roll:  Ki ");
+          lcd_printplacement(4);
           lcd.print(locked[PIDopt]?"L":" ");
           lcd.print("         ");
           lcdprint_float(calibrateArr[4], 4);
           break;
         case 5:
-          lcd.print("Roll:  Kd x.xxxx");
+          lcd.print("Roll:  Kd ");
+          lcd_printplacement(4);
           lcd.print(locked[PIDopt]?"L":" ");
           lcd.print("         ");
           lcdprint_float(calibrateArr[5], 4);
           break;
         case 6:
-          lcd.print("Yaw:   Kp x.xxxx");
+          lcd.print("Yaw:   Kp ");
+          lcd_printplacement(4);
           lcd.print(locked[PIDopt]?"L":" ");
           lcd.print("         ");
           lcdprint_float(calibrateArr[6], 4);
           break;
         case 7:
-          lcd.print("Yaw:   Ki x.xxxx");
+          lcd.print("Yaw:   Ki ");
+          lcd_printplacement(4);
           lcd.print(locked[PIDopt]?"L":" ");
           lcd.print("         ");
           lcdprint_float(calibrateArr[7], 4);
           break;
         case 8:
-          lcd.print("Yaw:   Kd x.xxxx");
+          lcd.print("Yaw:   Kd ");
+          lcd_printplacement(4);
           lcd.print(locked[PIDopt]?"L":" ");
           lcd.print("         ");
           lcdprint_float(calibrateArr[8], 4);
           break;
         case 9:
-          lcd.print("CF Value:   x.xx");
+          lcd.print("CF Value:   ");
+          lcd_printplacement(2);
           lcd.print(locked[PIDopt]?"L":" ");
           lcd.print("           ");
           lcdprint_float(calibrateArr[9], 2);
@@ -237,6 +248,36 @@ void update_display() {
           char bufd[8];
           lcd.print(itoa(PIDopt, bufd, 10)); 
       }
+  }
+}
+
+void lcd_printplacement(int precision) {
+  if(precision == 4) {
+    switch(tensPowerPot) {
+      case 1:
+        lcd.print("_.xxxx"); break;
+      case 2:
+        lcd.print("x._xxx"); break;
+      case 3:
+        lcd.print("x.x_xx"); break;
+      case 4:
+        lcd.print("x.xx_x"); break;
+      case 5:
+        lcd.print("x.xxx_"); break;
+      deafault:
+        break;
+    }
+  } else if(precision == 2) {
+    switch(tensPowerPot) {
+      case 1:
+        lcd.print("_.xx"); break;
+      case 2:
+        lcd.print("x._x"); break;
+      case 3:
+        lcd.print("x.x_"); break;
+      default:
+        break;
+    }
   }
 }
 
@@ -270,7 +311,6 @@ void button_opts() {
     if(!mtr_switch) {
       thrust = 0;
     }
-    PIDopt = PIDopt==0?1:0; // quad starts with motors off
     digitalWrite(PIN_LED_RED, mtr_switch);
   } else if(PIDflag == 1 && numbers[7] ==1024 && !btn1Hi){ // right button pressed in PID mode
     btn1Hi = true;
@@ -280,7 +320,16 @@ void button_opts() {
   } else if(PIDflag == 1 && numbers[6] == 1024 && !btn2Hi){ // left button pressed in PID mode (toggle lock)
     btn2Hi = true;
     locked[PIDopt] = !locked[PIDopt];
-  } else if(numbers[6] == 0 && numbers[7] == 0) { // buttons released
+  } else if(PIDflag == 1 && numbers[0] < min_val[0]+DEAD_THRESH && YPRVals[2] > 40 && YPRVals[1] > 40 && !latch) {
+    latch = true;
+    mtr_switch = !mtr_switch;
+    if(!mtr_switch) {
+      thrust = 0;
+    }
+    digitalWrite(PIN_LED_RED, mtr_switch);
+  } else if(latch && YPRVals[2] < 10 && YPRVals[1] < 10) {
+    latch = false;
+  }else if(numbers[6] == 0 && numbers[7] == 0) { // buttons released
     btn1Hi = false;
     btn2Hi = false;
   }
@@ -304,6 +353,7 @@ void setup() {
   Serial1.begin(SERIAL_BAUD);  
 
   delay(100);
+  lcd.display();
   lcd.clear();  // Clear lcd only on init
   for(char i = 0; i < 8; i++) {
     scale[7-i] = B11111111;
@@ -357,7 +407,7 @@ void loop() {
     updatePIDVals();
   }
 
-  // Send thrust value
+  // Send thrust values
   rfWrite(magic[0]);
   rfWrite(highByte(thrust));
   rfWrite(lowByte(thrust));
@@ -372,17 +422,31 @@ void loop() {
 
   // Send option modes
   if(last+1000 < millis()) {
+    if(millis()-last<0) { // timer overflowed
+      last = millis();
+      screen_last = millis();
+    }
+    rfWrite(magic[5]);
+    rfWrite((uint8_t)(mtr_switch?1:0));
     rfWrite(magic[6]);
     rfWrite(PIDflag);
-    rfWrite(magic[7]);
-    rfWrite(PIDopt);
     delay(20);
-  }
 
-  // Send potentiometer entries if needed
-  switch(PIDopt) {
-    default:
-      break;
+    // Send potentiometer entries if needed
+    if(PIDflag == 1) {
+      rfWrite(magic[7]);
+      rfWrite(PIDopt);
+    
+      rfWrite(magic[4]);
+      uint8_t toSend1 = (int)calibrateArr[PIDopt];
+      rfWrite(toSend1);
+      int toSend = (calibrateArr[PIDopt]-(int)calibrateArr[PIDopt])*10000;
+      rfWrite(highByte(toSend));
+      rfWrite(lowByte(toSend));
+      delay(20);
+    }
+    
+    last = millis();
   }
 }
 

@@ -4,11 +4,13 @@
 #include <Adafruit_Sensor.h>  // Backend for Adafruit LSM9DS1 and Simple_AHRS
 #include <Adafruit_Simple_AHRS.h>
 
-#define MOTOR1_PIN 4
-#define MOTOR2_PIN 5
-#define MOTOR3_PIN 8
-#define MOTOR4_PIN 9
-#define P_OFFSET 0
+#define MOTOR1_PIN 4  //TL
+#define MOTOR2_PIN 5  //TR
+#define MOTOR3_PIN 8  //BL
+#define MOTOR4_PIN 9  //BR
+#define POFFSET 3.23  // pitch offset
+#define ROFFSET -0.9 // roll offset
+#define YOFFSET 0 // Yaw offset
 
 /**------- SENSOR DECLARATIONS --------**/
 Adafruit_LSM9DS1 lsm = Adafruit_LSM9DS1();
@@ -19,33 +21,44 @@ char index = 0;
 char count = 0;
 int num_received = 0;
 int raw_input[8] = {0,0,0,0,0,0,0,0}; // raw controller input
+bool POTflag = false;
+bool POTproc = false;
+uint8_t POTsig = 0;
+float POTval = 0;
+float compPAngle;
+float compRAngle;
 
 /**
  * NOTE: ANGULAR ACCELERATION IDEALLY ABOUT 50deg/sec
  * ROLL/PITCH RECEIVE ANGLE INPUTS OF MAX 45 deg
  */
 
+/** FILTER CONSTANTS **/
+float compVal = 0.1;
+
 /** PID CONSTANTS **/
-//int filteredp;
-//float phistory[5];
-//int filteredr;
-//float rhistory[5];
-//int BOX_SIZE = 5;
-float pkp = 1.4;
-float pki = 0.25;
-float pkd = 0.2;  // 1.1 - 0.2 - 0.3
-float compVal = 0;
+float kpp = 0;
+float kpi = 0;
+float kpd = 0;  // 1.1 - 0.2 - 0.3
+float krp = 0;
+float kri = 0;
+float krd = 0;
+float kyp = 0;
+float kyi = 0;
+float kyd = 0;
  
 /**----- FINAL CALCULATION PLACING --------**/
 uint8_t motors[4] = {MOTOR1_PIN, MOTOR2_PIN, MOTOR3_PIN, MOTOR4_PIN};
-unsigned int motor_speeds[4] = {0,0,0,0};
-unsigned int adjusted_speeds[4] = {0,0,0,0};  // values to put onto motors
+int motor_speeds[4] = {0,0,0,0};
+int adjusted_speeds[4] = {0,0,0,0};  // values to put onto motors
 unsigned int MIN_THROTTLE = 50;
 
 /**------ MISC. TIMINGS ------**/
 unsigned long remote_time;
 unsigned long debug_time;
-uint16_t dtMeasure;
+unsigned long PIDtime;
+unsigned long compdt;
+float dt = .01;
 
 /** FUNCTION DECLARATIONS **/
 void setupSensor();
@@ -85,15 +98,16 @@ void setup() {
 
   // Initialize and setup sensor gain and measuring frequency
   if(!lsm.begin()) {
-    Serial.print(F("Ooops, no LSM9DS0 detected ... Check your wiring or I2C ADDR!"));
+    Serial.print(F("Ooops, no LSM9DS1 detected ... Check your wiring or I2C ADDR!"));
     while(1);
   }
   setupSensor();
 
-  // Initialize start times
+  // Initialize start times 
   remote_time = millis();
   debug_time = millis();
-  dtMeasure = millis();
+  PIDtime = millis();
+  compdt = millis();
 }
 
 void loop() {
@@ -101,37 +115,38 @@ void loop() {
 
   // MAIN CONTROLLER
   control();  // Update any raw controller values
-  switchModes();
   ahrs.getRollPitchYaw(&orientation);  // Get all necessary sensor values
-  complimentaryFilter(&orientation);  //  filter the input data
 
-  // smoothing
-  filteredp = smoothp(orientation.pitch);
-  filteredr = smoothr(orientation.roll);
-  
-//  pid(orientation);  // Calculate PID values using received values
-  if(raw_input[6] == 0 && raw_input[7] == 1)  // button determines if motors will update
+  // First filter the data
+  complimentaryFilter(&orientation);
+
+  if(PIDtime+10<=millis()) {
+    pid(orientation);  // Calculate PID values using received values every 10 ms
+    PIDtime = millis();
     motor_speed();  // Update motor values as necessary
+  }
+  
   check_remote(); // shuts of all inputs if no inputs remote inputs are given
 
   // DEBUG OUTPUT ONLY
-  if(debug_time+20 <= millis()) {
-    export_debug(orientation);
-    debug_time = millis();
-  }
+//  if(debug_time+20 <= millis()) {
+//    export_debug(orientation);
+//    debug_time = millis();
+//  }
 }
 
 /*********************************************** HELPER METHODS *****************************************/ 
 void complimentaryFilter(sensors_vec_t* orientation) {
-  // compliment pitch data with gyro data
-  orientation->pitch = compVal*(orientation->pitch+orientation->gyro.y*dtMeasure) + (1-compVal)*orientation->pitch;
-
-  // compliment roll data with gyro data
-  orientation->roll = compVal*(orientation->roll+orientation->gyro.x*dtMeasure) + (1-compVal)*orientation->roll;
-}
-
-void switchModes() {
-  return;
+  float tempdt = (millis()-compdt)/1000.0;
+  if(compVal >= 0 && compVal <=1) {
+    // compliment pitch data with gyro data
+    compPAngle = (1-compVal)*(compPAngle+orientation->gyro.y*tempdt) + compVal*orientation->pitch;
+    // compliment roll data with gyro data
+    compRAngle = (1-compVal)*(compRAngle+orientation->gyro.x*tempdt) + compVal*orientation->roll;
+  } else {
+    // compensated angles will not change with garbage inputs
+  }
+  compdt = millis();
 }
 
 void setupSensor()
@@ -147,17 +162,15 @@ void setupSensor()
 }
 
 void export_debug(sensors_vec_t orientation) {
-    Serial.print((int)orientation.roll);
-    Serial.print(" ");
-//    Serial.print(filteredr);
+//    Serial.print((int)orientation.roll);
 //    Serial.print(" ");
-//    Serial.print(filteredp);
+//    Serial.print((int)orientation.pitch);
 //    Serial.print(" ");
-    Serial.print((int)orientation.pitch);
+//    Serial.print((int)orientation.gyro.x);
 //    Serial.print(" ");
-//    Serial.print((int)orientation.yaw.xlx);
+//    Serial.print((int)orientation.gyro.y);
 //    Serial.print(" ");
-//    Serial.print((int)orientation.yaw.gyrox);
+//    Serial.print(compPAngle);
     Serial.print("\n");
 }
 
@@ -173,21 +186,23 @@ void control(){
   if (rfAvailable()){
     uint8_t c = rfRead();
     if (!isin(c)) {
-      if(index != 0 && index != 4 && index != 5) {  //others sent as uint8 type
+      if(index != 0 && index != 4) {  //others sent as uint8 type
         num_received = (int8_t)c;
         raw_input[index] = num_received;
-      }
-      if(count == 0){
+      } else if(index == 4 && POTflag == false) {
+        // pot values sent as 8bit uint + 16bit int for the floating part
+        POTsig = c;  // Passes integer portion into this var
+        POTflag = true;
+      } else if(count == 0){
         num_received = c;
         num_received = num_received<<8;
         count++;
-      }
-      else {
+      } else {
         count = 0;
         num_received |= c;
-        if (index < 8){
+        POTproc = true;
+        if (index < 8)
           raw_input[index] = num_received;
-        }
       }
     }
     else {
@@ -205,13 +220,45 @@ void control(){
 //    }
 
     remote_time = millis();
+    if(POTproc && count == 0)
+      processPot();
   }
 
-   // Supposing that throttle changes, this is a good place to change the motor values
+   // Supposing that throttle changes, this is a good place to change the default motor values
    for(char i = 0; i<4; i++) {
-    motor_speeds[i] = raw_input[0]; // sets default value (changes due to PID)
-    adjusted_speeds[i] = raw_input[0];
+    motor_speeds[i] = raw_input[0]; // sets default value
+    adjusted_speeds[i] = raw_input[0];  // default init PID value
    }
+}
+
+void processPot() {
+  POTflag = false;
+  POTproc = false;
+  POTval = (float)POTsig + (float)raw_input[4]/10000.0;
+  switch(raw_input[7]) {  // Process the desired input
+    case 0:
+      kpp=POTval; break;
+    case 1:
+      kpi=POTval; break;
+    case 2:
+      kpd=POTval; break;
+    case 3:
+      krp=POTval; break;
+    case 4:
+      kri=POTval; break;
+    case 5:
+      krd=POTval; break;
+    case 6:
+      kyp=POTval; break;
+    case 7:
+      kyi=POTval; break;
+    case 8:
+      kyd=POTval; break;
+    case 9:
+      compVal=POTval; break;
+    default:
+      break;
+  }
 }
 
 bool isin(uint8_t c){
@@ -233,135 +280,159 @@ char indexof(uint8_t c){
   else {return 8;}
 }
 
-/**
- * 0 - BL
- * 1 - BR
- * 2 - TL
- * 3 - TR
- */
 void motor_speed(){
   for(char i=0; i<4; i++) {
-    analogWrite(motors[i], adjusted_speeds[i]);
+    if(adjusted_speeds[i]<=20)
+      analogWrite(motors[i], 0);
+    else {
+      if(i == 0 || i == 1) 
+        analogWrite(motors[i], limitThrottleVals((adjusted_speeds[i]-20)*1.1));
+      else
+        analogWrite(motors[i], limitThrottleVals(adjusted_speeds[i]));
+    }
   }
 }
 
-// Modifies the current pitch to suit desired parameters.
 void pitch(float pspeed){
-  int toChange = abs((int)pspeed);
+  int toChange = abs((int)pspeed/2);
 
   if(raw_input[0] < MIN_THROTTLE) {
     return;
   } else {
-    if(pspeed > 2) {
-      adjusted_speeds[0] = motor_speeds[0] - toChange;
-//      adjusted_speeds[3] = motor_speeds[3] + toChange;
-      adjusted_speeds[1] = motor_speeds[1] + toChange;
-    } else if (pspeed < -2) {
-      adjusted_speeds[0] = motor_speeds[0] + toChange;
-//      adjusted_speeds[3] = motor_speeds[3] - toChange; 
-      adjusted_speeds[1] = motor_speeds[1] - toChange;
+    if(pspeed > 3) {
+      // Error is positive -> Need to pitch forward
+      adjusted_speeds[0] -= toChange;
+      adjusted_speeds[1] -= toChange;
+      adjusted_speeds[2] += toChange;
+      adjusted_speeds[3] += toChange;
+    } else if (pspeed < -3) {
+      // Error is negative -> Need to pitch backwards
+      adjusted_speeds[0] += toChange;
+      adjusted_speeds[1] += toChange;
+      adjusted_speeds[2] -= toChange;
+      adjusted_speeds[3] -= toChange;
     }
   }
 }
 
 void roll(float rspeed){
-  //same as pitch
+  int toChange = abs((int)rspeed/2);
+
+  if(raw_input[0] < MIN_THROTTLE) {
+    return;
+  } else {
+    if(rspeed > 3) {
+      // Error is positive -> Need to roll to the right
+      adjusted_speeds[0] += toChange;
+      adjusted_speeds[1] -= toChange;
+      adjusted_speeds[2] += toChange;
+      adjusted_speeds[3] -= toChange;
+    } else if(rspeed < -3) {
+      // Error is negative -> Need to roll to the left
+      adjusted_speeds[0] -= toChange;
+      adjusted_speeds[1] += toChange;
+      adjusted_speeds[2] -= toChange;
+      adjusted_speeds[3] += toChange;
+    }
+  }
 }
 
 void yaw(float yspeed) {
-  //raise speed of 2 diagonal motors
+  int toChange = abs((int)yspeed/2);
+
+  if(raw_input[0] < MIN_THROTTLE) {
+    return;
+  } else {
+    if(yspeed > 3) {
+      // Error is positive -> Need to turn clockwise
+      adjusted_speeds[0] -= toChange;
+      adjusted_speeds[1] += toChange;
+      adjusted_speeds[2] += toChange;
+      adjusted_speeds[3] -= toChange;
+    } else if(yspeed < -3) {
+      // Error is negative -> Need to turn cclockwise
+      adjusted_speeds[0] += toChange;
+      adjusted_speeds[1] -= toChange;
+      adjusted_speeds[2] -= toChange;
+      adjusted_speeds[3] += toChange;
+    }
+  }
 }
 
-//int smoothr(float rIn){
-//  static int ind;
-//  static float toLeave;
-//  static float sum;
-//
-//  //reset counter
-//  if(ind == BOX_SIZE)
-//    ind = 0;
-//
-//  //otherwise add new value
-//  rhistory[ind] = rIn;
-//
-//  // take weighted average of the items
-//  sum -= toLeave-rIn;
-//  ind++;
-//  toLeave = rhistory[(ind+1)%BOX_SIZE];
-//  
-//  return sum/BOX_SIZE;
-//}
-//
-//int smoothp(float pIn){
-//  static int ind;
-//  static float toLeave;
-//  static float sum;
-//
-//  //reset counter
-//  if(ind == BOX_SIZE)
-//    ind = 0;
-//
-//  //otherwise add new value
-//  phistory[ind] = pIn;
-//
-//  // take weighted average of the items
-//  sum -= toLeave-pIn;
-//  ind++;
-//  toLeave = phistory[(ind+1)%BOX_SIZE];
-//  
-//  return sum/BOX_SIZE;
-//}
+int limitThrottleVals(int currThrottle) {
+  if(currThrottle <= 0)
+    return 0;
+  else if(currThrottle >= 255)
+    return 255;
+  else
+    return currThrottle;
+}
 
 void pid(sensors_vec_t orientation){
-  static float prev_error;
+  // PITCH VALUES
+  static float pprev_input;
   static float pintegral;
-  
   int ptarget = raw_input[2];
-  float psensor = orientation.pitch - P_OFFSET;
+  float psensor = compPAngle - POFFSET;
   float pierror = (float)ptarget - psensor;  // proportional
-  
-  if(abs(pierror) > 20)
+
+  pintegral += kpi*pierror*dt;  // integral
+  if(abs((int)pierror)<2) {
     pintegral = 0;
-  if(pintegral > 70) // Set hard limits on integral
-    pintegral = 70;
-  else if(pintegral < -70)
-    pintegral = -70;
+  }
+  if(pintegral > 100) {
+    pintegral = 100;
+  } else if(pintegral < -100) {
+    pintegral = -100;
+  }
 
-  float pderivative = (orientation.pitch - prev_error)/(dtMeasure);  // derivative
-
-  float pspeed = (pkp*pierror) + (pintegral) + (pkd*pderivative); // final value of sum
-  if(pspeed > 70)  // hard limit on pspeed
-    pspeed = 70;
-  else if(pspeed < -70)
-    pspeed = -70;
+  float pderivative = psensor-pprev_input;   //derivative
+  pprev_input = psensor;
+  
+  float pspeed = (kpp*pierror) + pintegral + (10*kpd*pderivative); // final value of sum
+  if(pspeed > 200)  // throttle max change
+    pspeed = 200;
+  else if(pspeed < -200)
+    pspeed = -200;
   pitch(pspeed);
-  Serial.println((int)(pierror));
-//  if(debug_time+100 <= millis()) {
-//    Serial.println((int)psensor);
-//    debug_time = millis();
-//  }
-//  rerror = rtarget - rsensor;
-//  rintegral = (integral/2) + rerror;
-//  if(rerror == 0){
-//    rintegral = 0; 
-//  }
-//  if(abs(rerror) > 40){
-//    rintegral = 0;
-//  }
-//  rderivative = rerror - rprev_error;
-//  rprev_error = rerror;
-//  rspeed = (kp*rerror) + (ki*rintegral) + (kd+rderivative);
 
-//  yerror = ytarget - ysensor;
-//  yintegral = (yintegral/2) + yerror;
-//  if(yerror == 0){
-//    yintegral = 0; 
-//  }
-//  if(abs(yerror) > 40){
-//    yintegral = 0;
-//  }
-//  yderivative = yerror - yprev_error;
-//  yprev_error = yerror;
-//  yspeed = (kp*yerror) + (ki*yintegral) + (kd+yderivative);
+  Serial.print(pierror);
+  Serial.print(" ");
+  Serial.println(pderivative);
+
+  // ROLL VALUES
+  static float rprev_error;
+  static float rintegral;
+  int rtarget = raw_input[3];
+  float rsensor = compRAngle - ROFFSET;
+  float rierror = (float)rtarget - rsensor; // proportional
+  
+  float rderivative = rierror-rprev_error;   //derivative
+  rprev_error = rierror;
+  
+  float rspeed = (krp*rierror) + (10*kri*rintegral) + (10*krd*rderivative); // final value of sum
+  if(rspeed > 100)  // throttle max change
+    rspeed = 100;
+  else if(rspeed < -100)
+    rspeed = -100;
+  //roll(pspeed);
+
+
+  // YAW VALUES
+  static float yprev_error;
+  static float yintegral;
+  int ytarget = raw_input[1];
+  float ysensor = orientation.gyro.z;
+  float yierror = (float)rtarget - ysensor; // proportional
+  
+  float yderivative = yierror-yprev_error;   //derivative
+  yprev_error = yierror;
+  
+  float yspeed = (kyp*yierror) + (10*kyi*yintegral) + (10*kyd*yderivative); // final value of sum
+  if(yspeed > 100)  // throttle max change
+    yspeed = 100;
+  else if(yspeed < -100)
+    yspeed = -100;
+  //yaw(yspeed);
 }
 
