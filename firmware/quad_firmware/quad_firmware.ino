@@ -1,3 +1,9 @@
+// DEFAULT:
+// 0.05 = CF VAL
+// 3 = Kpp
+// 0.9 = Kpi
+// 1.6 = Kpd
+
 #include <radio.h>
 #include <Wire.h>
 #include <Adafruit_LSM9DS1.h>
@@ -11,6 +17,7 @@
 #define POFFSET 3.23  // pitch offset
 #define ROFFSET -0.9 // roll offset
 #define YOFFSET 0 // Yaw offset
+#define BOX_SIZE 5  // gyro box filter size
 
 /**------- SENSOR DECLARATIONS --------**/
 Adafruit_LSM9DS1 lsm = Adafruit_LSM9DS1();
@@ -34,7 +41,8 @@ float compRAngle;
  */
 
 /** FILTER CONSTANTS **/
-float compVal = 0.1;
+float compVal = 0.05;
+float boxSumArray[BOX_SIZE];
 
 /** PID CONSTANTS **/
 float kpp = 0;
@@ -70,6 +78,7 @@ char indexof(uint8_t c);
 void pid(sensors_vec_t orientation);
 void switchModes();
 void complimentaryFilter(sensors_vec_t* orientation);
+void gyroYBoxFilter(sensors_vec_t* orientation);
 
 //??????
 void motor_speed();
@@ -119,6 +128,7 @@ void loop() {
 
   // First filter the data
   complimentaryFilter(&orientation);
+  gyroYBoxFilter(&orientation);
 
   if(PIDtime+10<=millis()) {
     pid(orientation);  // Calculate PID values using received values every 10 ms
@@ -368,6 +378,19 @@ int limitThrottleVals(int currThrottle) {
     return currThrottle;
 }
 
+void gyroYBoxFilter(sensors_vec_t* orientation) {
+  float currVal = orientation->gyro.y;
+  static float boxSum;
+  static int i;
+
+  boxSumArray[i] = currVal;
+  boxSum += (currVal-boxSumArray[((i+1)%BOX_SIZE)])/BOX_SIZE;
+  i = (i+1)%BOX_SIZE;
+
+  // Finally adjust the actual value
+  orientation->gyro.y = boxSum;
+}
+
 void pid(sensors_vec_t orientation){
   // PITCH VALUES
   static float pprev_input;
@@ -385,20 +408,19 @@ void pid(sensors_vec_t orientation){
   } else if(pintegral < -100) {
     pintegral = -100;
   }
+  
 
-  float pderivative = psensor-pprev_input;   //derivative
+  float pderivative = orientation.gyro.y;   //derivative
   pprev_input = psensor;
   
-  float pspeed = (kpp*pierror) + pintegral + (10*kpd*pderivative); // final value of sum
+  float pspeed = (kpp*pierror) + pintegral + (kpd*pderivative); // final value of sum
   if(pspeed > 200)  // throttle max change
     pspeed = 200;
   else if(pspeed < -200)
     pspeed = -200;
   pitch(pspeed);
 
-  Serial.print(pierror);
-  Serial.print(" ");
-  Serial.println(pderivative);
+  Serial.println((int)pspeed);
 
   // ROLL VALUES
   static float rprev_error;
