@@ -1,8 +1,8 @@
 // DEFAULT:
-// 0.05 = CF VAL
-// 3 = Kpp
-// 0.9 = Kpi
-// 1.6 = Kpd
+// 0.03 = CF VAL
+// 6 = Kpp
+// 1.7 = Kpi
+// 2.1 = Kpd
 
 #include <radio.h>
 #include <Wire.h>
@@ -185,7 +185,7 @@ void export_debug(sensors_vec_t orientation) {
 }
 
 void check_remote() {
-  if ((millis()-remote_time) > 1000){
+    if ((millis()-remote_time) > 1000){
     for (char i = 0; i < 8; i++){
       raw_input[i] = 0;
     }
@@ -296,7 +296,7 @@ void motor_speed(){
       analogWrite(motors[i], 0);
     else {
       if(i == 0 || i == 1) 
-        analogWrite(motors[i], limitThrottleVals((adjusted_speeds[i]-20)*1.1));
+        analogWrite(motors[i], limitThrottleVals((adjusted_speeds[i])));
       else
         analogWrite(motors[i], limitThrottleVals(adjusted_speeds[i]));
     }
@@ -400,9 +400,6 @@ void pid(sensors_vec_t orientation){
   float pierror = (float)ptarget - psensor;  // proportional
 
   pintegral += kpi*pierror*dt;  // integral
-  if(abs((int)pierror)<2) {
-    pintegral = 0;
-  }
   if(pintegral > 100) {
     pintegral = 100;
   } else if(pintegral < -100) {
