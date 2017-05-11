@@ -185,7 +185,7 @@ void export_debug(sensors_vec_t orientation) {
 }
 
 void check_remote() {
-    if ((millis()-remote_time) > 1000){
+  if ((millis()-remote_time) > 1000){
     for (char i = 0; i < 8; i++){
       raw_input[i] = 0;
     }
