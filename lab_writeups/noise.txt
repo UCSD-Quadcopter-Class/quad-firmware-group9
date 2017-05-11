@@ -1,0 +1,7 @@
+Noise was a large issue here. In order to deal with the noise, a complementary
+filter was used to smoothen the Euler angle input. The filter itself does
+introduce lag to the system, so any further smoothing of the still noisy
+derivative resulted in unexpected results. Instead, the gyro input data was
+taken and then smoothed using a linear box filter. This produced generally
+usable values for most throttle values, but the highest options could 
+potentially be changed (a 4.2V battery was used instead of a 3.7V battery).
