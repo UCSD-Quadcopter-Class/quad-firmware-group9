@@ -11,7 +11,7 @@
 #define PIN_POT2    6//A6
 #define PIN_BTN1    16    // PG0 (schematic) G0 (red board)
 #define PIN_BTN2    17    // PG1 (schematic) G1 (red board)
-#define PIN_LED_BLUE  22    // PD6 (schematic) D4 (red board)
+#define PIN_LED_BLUE  22    // PD6 (sc  hematic) D4 (red board)
 #define PIN_LED_GRN   23    // PD5 (schematic) D5 (red board)
 #define PIN_LED_RED   24    // PD4 (schematic) D6 (red board)   
 
@@ -48,9 +48,9 @@ int thrust;
 short tensPowerPot;
 short valsPowerPot;
 int8_t YPRVals[3] = {0, 0, 0};
-int min_val[8] = {124,116,116,117,115,115,0,0};   // LAST RECORDED VALS
-int max_val[8] = {816,816,834,815,790,790,1024,1024}; // LAST RECORDED VALS
-int stdy_val[4] = {459, 505, 468}; // STDY FOR Y/P/R
+int min_val[8] = {146,118,153,123,0,0,0,0};   // LAST RECORDED VALS
+int max_val[8] = {1023,980,1015,962,975,1023,1023,1023}; // LAST RECORDED VALS
+int stdy_val[4] = {484, 511, 482}; // STDY FOR Y/P/R
 char magic[8] = {'A','B','C','D','E','F','G','H'};
 char *labels[8] = {"T ", "Y ", "P ", "R ", "P1", "P2", "B1", "B2"}; // used for serial display
 char pins[8] = {PIN_THROTTLE, PIN_YAW, PIN_PITCH, PIN_ROLL, PIN_POT1, PIN_POT2, PIN_POT1, PIN_POT2};
@@ -132,6 +132,17 @@ void mapping_scheme() {
     }
     valsPowerPot = map(numbers[5], min_val[5], max_val[5], 0, 9);
   }
+
+  // VISUALIZE MAPPED VALS
+  Serial.print(thrust);
+  for(int i=0; i<3; i++) {
+    Serial.print(" ");
+    Serial.print(YPRVals[i]);
+  }
+  Serial.print(" ");
+  Serial.print(tensPowerPot);
+  Serial.print(" ");
+  Serial.println(valsPowerPot);
 }
 
 void lcdprint_float(float num, int dec_places) {
@@ -290,28 +301,16 @@ void button_opts() {
   if(numbers[6] == 1024 && numbers[7] == 1024 && !btn1Hi && !btn2Hi) { // buttons pressed first moment
     btn1Hi = true;
     btn2Hi = true;
-    
+
+    // ensure motor is stopped when switching modes
     PIDflag = PIDflag==0?1:0;
-    if(PIDflag == 1) {
-      PIDopt = 0;
-      if(mtr_switch) {
-        mtr_switch = !mtr_switch;
-        digitalWrite(PIN_LED_RED, mtr_switch);
-      }
-      // ensure motor is stopped
-      thrust = 0;
-    } else
-      PIDopt = 0;
-    lcd.clear();
-  } else if(numbers[6] == 1024 && PIDflag == 0 && !btn1Hi) {  // Left button pressed in free mode
-    btn1Hi = true;
-    
-    //switch on/off motor
-    mtr_switch = !mtr_switch;
-    if(!mtr_switch) {
-      thrust = 0;
+    if(mtr_switch) {
+      mtr_switch = !mtr_switch;
+      digitalWrite(PIN_LED_RED, mtr_switch);
     }
-    digitalWrite(PIN_LED_RED, mtr_switch);
+    thrust = 0;
+      
+    lcd.clear();
   } else if(PIDflag == 1 && numbers[7] ==1024 && !btn1Hi){ // right button pressed in PID mode
     btn1Hi = true;
     locked[PIDopt] = true;
@@ -320,7 +319,7 @@ void button_opts() {
   } else if(PIDflag == 1 && numbers[6] == 1024 && !btn2Hi){ // left button pressed in PID mode (toggle lock)
     btn2Hi = true;
     locked[PIDopt] = !locked[PIDopt];
-  } else if(PIDflag == 1 && numbers[0] < min_val[0]+DEAD_THRESH && YPRVals[2] > 40 && YPRVals[1] > 40 && !latch) {
+  } else if(numbers[0] < min_val[0]+DEAD_THRESH && YPRVals[2] > 40 && YPRVals[1] > 40 && !latch) {  // throttle latch
     latch = true;
     mtr_switch = !mtr_switch;
     if(!mtr_switch) {
@@ -342,6 +341,56 @@ void button_opts() {
     digitalWrite(PIN_LED_BLUE, LOW);
     digitalWrite(PIN_LED_GRN, HIGH);
   }
+}
+
+
+// Sends a special signal telling the quad to calibrate itself. Does not
+// allow other movements during the calibration time.
+void startCalibrationProc() {
+  bool calStartLatch = true;
+  int blueState = digitalRead(PIN_LED_BLUE);
+  int greenState = digitalRead(PIN_LED_GRN);
+  int redState = digitalRead(PIN_LED_RED);
+
+  // These are all indicators
+  digitalWrite(PIN_LED_BLUE, HIGH);
+  digitalWrite(PIN_LED_GRN, HIGH);
+  digitalWrite(PIN_LED_RED, HIGH);
+  lcd.home();
+  lcd.print(" Calibrating... ");
+  lcd.print("   Initiating   ");
+  
+  while(true) {
+    // while signal not acknowledged send calibrate signal
+    while(calStartLatch) {
+      rfWrite('Z');
+      rfWrite('C');
+      delay(40);
+      int c = rfRead();
+      if(c == 'A')
+        calStartLatch = false;
+    }
+
+    lcd.selectLine(1);
+    lcd.print("   Processing   ");
+
+    // exit loop on receipt of exit signal
+    int d = rfRead();
+    Serial.println(d);
+    if(d == 'D') {
+      lcd.selectLine(1);
+      lcd.print("     Done!!     ");
+      rfFlush();
+      delay(2000);
+      break;
+    }
+  }
+
+  digitalWrite(PIN_LED_BLUE, blueState);
+  digitalWrite(PIN_LED_GRN, greenState);
+  digitalWrite(PIN_LED_RED, redState);
+  lcd.clear();
+  lcd.home();
 }
 
 void setup() {
@@ -381,8 +430,11 @@ void setup() {
   // Reset indicators on quad
   rfWrite(magic[6]);
   rfWrite(PIDflag);
+  delay(20);
   rfWrite(magic[7]);
   rfWrite(PIDopt);
+  delay(20);
+  startCalibrationProc();
 }
 
 void loop() {
@@ -409,8 +461,7 @@ void loop() {
 
   // Send thrust values
   rfWrite(magic[0]);
-  rfWrite(highByte(thrust));
-  rfWrite(lowByte(thrust));
+  rfWrite(thrust);
   delay(20);
 
   // Send angular values
@@ -449,4 +500,3 @@ void loop() {
     last = millis();
   }
 }
-

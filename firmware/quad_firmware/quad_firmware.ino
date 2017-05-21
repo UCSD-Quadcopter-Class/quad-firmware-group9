@@ -14,10 +14,8 @@
 #define MOTOR2_PIN 5  //TR
 #define MOTOR3_PIN 8  //BL
 #define MOTOR4_PIN 9  //BR
-#define POFFSET 3.23  // pitch offset
-#define ROFFSET -0.9 // roll offset
-#define YOFFSET 0 // Yaw offset
 #define BOX_SIZE 5  // gyro box filter size
+#define Z_BOX_SIZE 16 // z axis gyro box size
 
 /**------- SENSOR DECLARATIONS --------**/
 Adafruit_LSM9DS1 lsm = Adafruit_LSM9DS1();
@@ -42,18 +40,23 @@ float compRAngle;
 
 /** FILTER CONSTANTS **/
 float compVal = 0.05;
-float boxSumArray[BOX_SIZE];
+float boxYSumArray[BOX_SIZE];
+float boxXSumArray[BOX_SIZE];
+float boxZSumArray[Z_BOX_SIZE];
 
 /** PID CONSTANTS **/
 float kpp = 0;
 float kpi = 0;
-float kpd = 0;  // 1.1 - 0.2 - 0.3
+float kpd = 0;
 float krp = 0;
 float kri = 0;
 float krd = 0;
 float kyp = 0;
 float kyi = 0;
 float kyd = 0;
+float P_OFFSET;
+float R_OFFSET;
+float Y_OFFSET;
  
 /**----- FINAL CALCULATION PLACING --------**/
 uint8_t motors[4] = {MOTOR1_PIN, MOTOR2_PIN, MOTOR3_PIN, MOTOR4_PIN};
@@ -76,17 +79,15 @@ void control();
 bool isin(uint8_t c);
 char indexof(uint8_t c);
 void pid(sensors_vec_t orientation);
-void switchModes();
 void complimentaryFilter(sensors_vec_t* orientation);
 void gyroYBoxFilter(sensors_vec_t* orientation);
-
-//??????
+void gyroXBoxFilter(sensors_vec_t* orientation);
+void gyroZBoxFilter(sensors_vec_t* orientation);
+void processPot();
 void motor_speed();
 void roll(float val);
 void pitch(float val);
 void yaw(float val);
-int smoothp(float val);
-int smoothr(float val);
 
 /************************ SETUP AND LOOP ************************/
 void setup() {
@@ -117,6 +118,9 @@ void setup() {
   debug_time = millis();
   PIDtime = millis();
   compdt = millis();
+
+  // Calibrate on startup
+  calibrateInit();
 }
 
 void loop() {
@@ -129,6 +133,8 @@ void loop() {
   // First filter the data
   complimentaryFilter(&orientation);
   gyroYBoxFilter(&orientation);
+  gyroXBoxFilter(&orientation);
+  gyroZBoxFilter(&orientation);
 
   if(PIDtime+10<=millis()) {
     pid(orientation);  // Calculate PID values using received values every 10 ms
@@ -137,12 +143,6 @@ void loop() {
   }
   
   check_remote(); // shuts of all inputs if no inputs remote inputs are given
-
-  // DEBUG OUTPUT ONLY
-//  if(debug_time+20 <= millis()) {
-//    export_debug(orientation);
-//    debug_time = millis();
-//  }
 }
 
 /*********************************************** HELPER METHODS *****************************************/ 
@@ -171,19 +171,6 @@ void setupSensor()
   lsm.setupGyro(lsm.LSM9DS1_GYROSCALE_245DPS);
 }
 
-void export_debug(sensors_vec_t orientation) {
-//    Serial.print((int)orientation.roll);
-//    Serial.print(" ");
-//    Serial.print((int)orientation.pitch);
-//    Serial.print(" ");
-//    Serial.print((int)orientation.gyro.x);
-//    Serial.print(" ");
-//    Serial.print((int)orientation.gyro.y);
-//    Serial.print(" ");
-//    Serial.print(compPAngle);
-    Serial.print("\n");
-}
-
 void check_remote() {
     if ((millis()-remote_time) > 1000){
     for (char i = 0; i < 8; i++){
@@ -192,11 +179,39 @@ void check_remote() {
   }  
 }
 
+void calibrateInit() {
+  // Signal acknowledged
+  for(int i=0; i<10; i++) {
+    rfWrite('A');
+    delay(10);
+  }
+
+  sensors_vec_t orientation;
+  // Perform self-calibration
+  for(int i=0; i<250; i++) {
+    ahrs.getRollPitchYaw(&orientation);  // Get all necessary sensor values
+    
+    complimentaryFilter(&orientation);  // And filter them
+    gyroYBoxFilter(&orientation);
+    gyroXBoxFilter(&orientation);
+    gyroZBoxFilter(&orientation);
+  }
+  P_OFFSET = compPAngle;
+  R_OFFSET = compRAngle;
+  Y_OFFSET = orientation.gyro.z;
+
+  // Signal done
+  for(int i=0; i<10; i++) {
+    rfWrite((char)'D');
+    delay(10);
+  }
+}
+
 void control(){
   if (rfAvailable()){
     uint8_t c = rfRead();
     if (!isin(c)) {
-      if(index != 0 && index != 4) {  //others sent as uint8 type
+      if(index != 4) {  //others sent as uint8 type
         num_received = (int8_t)c;
         raw_input[index] = num_received;
       } else if(index == 4 && POTflag == false) {
@@ -214,8 +229,11 @@ void control(){
         if (index < 8)
           raw_input[index] = num_received;
       }
-    }
-    else {
+    } else {
+      if(c == 'Z') {
+        if(rfRead() == 'C')
+          calibrateInit();
+      }
       index = indexof(c);
       count = 0;
     }
@@ -272,7 +290,7 @@ void processPot() {
 }
 
 bool isin(uint8_t c){
-  if (c=='A'||c=='B'||c=='C'||c=='D'||c=='E'||c=='F'||c=='G'||c=='H'){
+  if (c=='A'||c=='B'||c=='C'||c=='D'||c=='E'||c=='F'||c=='G'||c=='H'||c=='Z'){
     return true;
   }
   return false;
@@ -383,12 +401,38 @@ void gyroYBoxFilter(sensors_vec_t* orientation) {
   static float boxSum;
   static int i;
 
-  boxSumArray[i] = currVal;
-  boxSum += (currVal-boxSumArray[((i+1)%BOX_SIZE)])/BOX_SIZE;
+  boxYSumArray[i] = currVal;
+  boxSum += (currVal-boxYSumArray[((i+1)%BOX_SIZE)])/BOX_SIZE;
   i = (i+1)%BOX_SIZE;
 
   // Finally adjust the actual value
   orientation->gyro.y = boxSum;
+}
+
+void gyroXBoxFilter(sensors_vec_t* orientation) {
+  float currVal = orientation->gyro.x;
+  static float boxSum;
+  static int i;
+
+  boxXSumArray[i] = currVal;
+  boxSum += (currVal-boxXSumArray[((i+1)%BOX_SIZE)])/BOX_SIZE;
+  i = (i+1)%BOX_SIZE;
+
+  // Finally adjust actual value
+  orientation->gyro.x = boxSum;
+}
+
+void gyroZBoxFilter(sensors_vec_t* orientation) {
+  float currVal = orientation->gyro.z;
+  static float boxSum;
+  static int i;
+
+  boxZSumArray[i] = currVal;
+  boxSum += (currVal-boxZSumArray[((i+1)%Z_BOX_SIZE)])/Z_BOX_SIZE;
+  i = (i+1)%Z_BOX_SIZE;
+
+  // Finally adjust actual value
+  orientation->gyro.z = boxSum;
 }
 
 void pid(sensors_vec_t orientation){
@@ -396,7 +440,7 @@ void pid(sensors_vec_t orientation){
   static float pprev_input;
   static float pintegral;
   int ptarget = raw_input[2];
-  float psensor = compPAngle - POFFSET;
+  float psensor = compPAngle - P_OFFSET;
   float pierror = (float)ptarget - psensor;  // proportional
 
   pintegral += kpi*pierror*dt;  // integral
@@ -405,7 +449,6 @@ void pid(sensors_vec_t orientation){
   } else if(pintegral < -100) {
     pintegral = -100;
   }
-  
 
   float pderivative = orientation.gyro.y;   //derivative
   pprev_input = psensor;
@@ -417,41 +460,59 @@ void pid(sensors_vec_t orientation){
     pspeed = -200;
   pitch(pspeed);
 
-  Serial.println((int)pspeed);
-
   // ROLL VALUES
   static float rprev_error;
   static float rintegral;
   int rtarget = raw_input[3];
-  float rsensor = compRAngle - ROFFSET;
+  float rsensor = compRAngle - R_OFFSET;
   float rierror = (float)rtarget - rsensor; // proportional
+
+  rintegral += kri*rierror*dt;  // integral
+  if(rintegral > 100) {
+    rintegral = 100;
+  } else if(rintegral < -100) {
+    rintegral = -100;
+  }
   
-  float rderivative = rierror-rprev_error;   //derivative
+  float rderivative = orientation.gyro.x;   //derivative
   rprev_error = rierror;
   
-  float rspeed = (krp*rierror) + (10*kri*rintegral) + (10*krd*rderivative); // final value of sum
-  if(rspeed > 100)  // throttle max change
-    rspeed = 100;
-  else if(rspeed < -100)
-    rspeed = -100;
-  //roll(pspeed);
-
+  float rspeed = (krp*rierror) + rintegral + (krd*rderivative); // final value of sum
+  if(rspeed > 200)  // throttle max change
+    rspeed = 200;
+  else if(rspeed < -200)
+    rspeed = -200;
+  roll(pspeed);
 
   // YAW VALUES
   static float yprev_error;
   static float yintegral;
   int ytarget = raw_input[1];
-  float ysensor = orientation.gyro.z;
+  float ysensor = orientation.gyro.z - Y_OFFSET;
   float yierror = (float)rtarget - ysensor; // proportional
+
+  yintegral += kyi*yierror*dt;
+  if(yintegral > 100) {
+    yintegral = 100;
+  } else if(rintegral < -100) {
+    yintegral = -100;
+  }
   
   float yderivative = yierror-yprev_error;   //derivative
   yprev_error = yierror;
   
   float yspeed = (kyp*yierror) + (10*kyi*yintegral) + (10*kyd*yderivative); // final value of sum
-  if(yspeed > 100)  // throttle max change
-    yspeed = 100;
-  else if(yspeed < -100)
-    yspeed = -100;
-  //yaw(yspeed);
+  if(yspeed > 200)  // throttle max change
+    yspeed = 200;
+  else if(yspeed < -200)
+    yspeed = -200;
+  yaw(yspeed);
+
+//  // VISUALIZATION OF PID ERRORS
+//  Serial.print(pierror);
+//  Serial.print(" ");
+//  Serial.print(rierror);
+//  Serial.print(" ");
+//  Serial.println(yierror);
 }
 
