@@ -59,7 +59,7 @@ bool locked[10] = {true, true, true, true, true, true, true, true, true, true};
 serLCD lcd;   // Holder for LCD Object
 bool mtr_switch = LOW;
 unsigned int maxYawVal = 50;  // 50 was a good compromise without knowing the system specs
-unsigned int DEAD_THRESH = 5; // dead threshold (distance for which nothing happens)
+unsigned int DEAD_THRESH = 15; // dead threshold (distance for which nothing happens)
 
 void updatePIDVals() {
   static short sequenced[5] = {0,0,0,0,0};
@@ -134,15 +134,15 @@ void mapping_scheme() {
   }
 
   // VISUALIZE MAPPED VALS
-  Serial.print(thrust);
-  for(int i=0; i<3; i++) {
-    Serial.print(" ");
-    Serial.print(YPRVals[i]);
-  }
-  Serial.print(" ");
-  Serial.print(tensPowerPot);
-  Serial.print(" ");
-  Serial.println(valsPowerPot);
+//  Serial.print(thrust);
+//  for(int i=0; i<3; i++) {
+//    Serial.print(" ");
+//    Serial.print(YPRVals[i]);
+//  }
+//  Serial.print(" ");
+//  Serial.print(tensPowerPot);
+//  Serial.print(" ");
+//  Serial.println(valsPowerPot);
 }
 
 void lcdprint_float(float num, int dec_places) {
@@ -255,6 +255,13 @@ void update_display() {
           lcd.print("           ");
           lcdprint_float(calibrateArr[9], 2);
           break;
+        case 10:
+          lcd.print(" Calibrate Quad ");
+          if(mtr_switch && numbers[0] > min_val[0]+DEAD_THRESH)
+            lcd.print("Lock & Set Still");
+          else
+            lcd.print(" RGimbal --> TL ");
+          break;
         default:
           char bufd[8];
           lcd.print(itoa(PIDopt, bufd, 10)); 
@@ -314,9 +321,9 @@ void button_opts() {
   } else if(PIDflag == 1 && numbers[7] ==1024 && !btn1Hi){ // right button pressed in PID mode
     btn1Hi = true;
     locked[PIDopt] = true;
-    PIDopt = (1+PIDopt)%10;  // 10 options to choose from
+    PIDopt = (1+PIDopt)%11;  // 11 options to choose from
     lcd.clear();
-  } else if(PIDflag == 1 && numbers[6] == 1024 && !btn2Hi){ // left button pressed in PID mode (toggle lock)
+  } else if(PIDflag == 1 && PIDopt != 10 && numbers[6] == 1024 && !btn2Hi){ // left button pressed in PID mode (toggle lock)
     btn2Hi = true;
     locked[PIDopt] = !locked[PIDopt];
   } else if(numbers[0] < min_val[0]+DEAD_THRESH && YPRVals[2] > 40 && YPRVals[1] > 40 && !latch) {  // throttle latch
@@ -326,9 +333,12 @@ void button_opts() {
       thrust = 0;
     }
     digitalWrite(PIN_LED_RED, mtr_switch);
-  } else if(latch && YPRVals[2] < 10 && YPRVals[1] < 10) {
+  } else if(latch && YPRVals[2] < 5 && YPRVals[1] < 5) {
     latch = false;
-  }else if(numbers[6] == 0 && numbers[7] == 0) { // buttons released
+  } else if(numbers[0] < min_val[0]+DEAD_THRESH && YPRVals[2] < -40 && YPRVals[1] < -40 && PIDopt == 10 && !latch) { // Calibration Proc
+    latch = true;
+    startCalibrationProc(); 
+  } else if(numbers[6] == 0 && numbers[7] == 0) { // buttons released
     btn1Hi = false;
     btn2Hi = false;
   }
@@ -394,7 +404,7 @@ void startCalibrationProc() {
 }
 
 void setup() {
-  const int RADIO_CHANNEL = 21;        // Channel for radio communications (can be 11-26)
+  const int RADIO_CHANNEL = 13;        // Channel for radio communications (can be 11-26)
   const int SERIAL_BAUD = 9600;        // Baud rate for serial port 
   const int SERIAL1_BAUD = 9600;     // Baud rate for serial1 port
 
@@ -434,7 +444,6 @@ void setup() {
   rfWrite(magic[7]);
   rfWrite(PIDopt);
   delay(20);
-  startCalibrationProc();
 }
 
 void loop() {
@@ -455,7 +464,7 @@ void loop() {
   mapping_scheme();
 
   // if in PID mode, create an integer using given inputs
-  if(PIDflag == 1) {
+  if(PIDflag == 1 && PIDopt != 10) {
     updatePIDVals();
   }
 
@@ -484,14 +493,15 @@ void loop() {
     delay(20);
 
     // Send potentiometer entries if needed
-    if(PIDflag == 1) {
+    if(PIDflag == 1 && PIDopt != 10) {
       rfWrite(magic[7]);
       rfWrite(PIDopt);
     
       rfWrite(magic[4]);
-      uint8_t toSend1 = (int)calibrateArr[PIDopt];
+      uint8_t toSend1 = (uint8_t)calibrateArr[PIDopt];
+      delay(20);
       rfWrite(toSend1);
-      int toSend = (calibrateArr[PIDopt]-(int)calibrateArr[PIDopt])*10000;
+      int toSend = (int)((calibrateArr[PIDopt]-(int)calibrateArr[PIDopt])*10000);
       rfWrite(highByte(toSend));
       rfWrite(lowByte(toSend));
       delay(20);

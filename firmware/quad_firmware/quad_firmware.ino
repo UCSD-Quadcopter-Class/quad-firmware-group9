@@ -92,7 +92,7 @@ void yaw(float val);
 /************************ SETUP AND LOOP ************************/
 void setup() {
   // Set up communication interfaces
-  const int RADIO_CHANNEL = 21;        // Channel for radio communications (can be 11-26)
+  const int RADIO_CHANNEL = 13;        // Channel for radio communications (can be 11-26)
   const int SERIAL_BAUD = 9600;        // Baud rate for serial port 
   const int SERIAL1_BAUD = 9600;     // Baud rate for serial1 port
 
@@ -213,7 +213,10 @@ void control(){
     if (!isin(c)) {
       if(index != 4) {  //others sent as uint8 type
         num_received = (int8_t)c;
-        raw_input[index] = num_received;
+        if(index == 0)
+          raw_input[index] = (uint8_t)c;
+        else
+          raw_input[index] = num_received;
       } else if(index == 4 && POTflag == false) {
         // pot values sent as 8bit uint + 16bit int for the floating part
         POTsig = c;  // Passes integer portion into this var
@@ -283,7 +286,9 @@ void processPot() {
     case 8:
       kyd=POTval; break;
     case 9:
-      compVal=POTval; break;
+      if(POTval < 1)
+        compVal=POTval;
+      break;
     default:
       break;
   }
