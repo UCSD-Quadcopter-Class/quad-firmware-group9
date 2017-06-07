@@ -1,7 +1,15 @@
+/**
+ * TODO: REWRITE CURRENT ASSIGNMENT LOOP AS A FUNCTION
+ * TODO: CONTINUE TO INTEGRATE OLD SKETCH FIRM INTO MULTIWII SKELETON
+ * TODO: MOVE CONSTS/VARS TO A SEPARATE HEADER FILE
+ * TODO: ANALYZE VARIABLE USAGE // CLEANUP EXCESS VARIABLES
+ */
+
 #include <stdarg.h>
 #include <avr/pgmspace.h>
 #include "Arduino.h"
 #include "types.h"
+#include "quad_methods.h"
 
 #define PROMINI
 #define FAILSAFE
@@ -136,7 +144,7 @@ int16_t  magHold,headFreeModeHold; // [-180;+180]
 int16_t axisPID[3];
 int16_t motor[8];
 int16_t servo[8] = {1500,1500,1500,1500,1500,1500,1500,1000};
-uint8_t PWM_PIN[8] = {8,3,5,4,6,5,A2,12};   //for a quad+: rear,right,left,front
+uint8_t PWM_PIN[8] = {4,5,3,8,6,5,A2,12};   //for a quad+: rear,right,left,front
 int16_t  debug[4];
 conf_t conf;
 flags_struct_t f;
@@ -179,7 +187,32 @@ const uint8_t boxids[] PROGMEM = {// permanent IDs associated to boxes. This way
 
 //The setup function is called once at startup of the sketch
 void setup() {
-	// Add your initialization code here
+  // Set up communication interfaces
+  const int RADIO_CHANNEL = 13;        // Channel for radio communications (can be 11-26)
+  rfBegin(RADIO_CHANNEL);
+
+  // Initialize pins
+  pinMode(MOTOR1_PIN, OUTPUT);
+  pinMode(MOTOR2_PIN, OUTPUT);
+  pinMode(MOTOR3_PIN, OUTPUT);
+  pinMode(MOTOR4_PIN, OUTPUT);
+
+  // Initialize and setup sensor gain and measuring frequency
+  if(!lsm.begin()) {
+    ;
+  }
+  setupSensor();
+
+  // Initialize start times 
+  remote_time = millis();
+  debug_time = millis();
+  PIDtime = millis();
+  compdt = millis();
+
+  // Calibrate on startup
+  calibrateInit();
+  
+	// (Old Initialization for MEGA/Non-mega)
 	SerialOpen(0,SERIAL0_COM_SPEED);
 	SerialOpen(1,SERIAL1_COM_SPEED);
 }
